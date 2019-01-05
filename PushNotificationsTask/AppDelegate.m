@@ -18,12 +18,14 @@ NSString *const kGCMMessageIDKey = @"357011116587";
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
   // Use Firebase library to configure APIs
-  [FIRApp configure];
+  if ([FIRApp defaultApp] == nil) {
+    [FIRApp configure];
+  }
   [FIRMessaging messaging].delegate = self;
-    [self registerForRemoteNotifications];
+  [self registerForRemoteNotifications];
   return YES;
 }
-
+//// adding for pushnotifications
 -(void)application:(UIApplication*)application didRegisterForRemoteNotificationsWithDeviceToken:(NSData*)deviceToken
 {
   NSString * tokenString = [deviceToken description];
@@ -31,16 +33,23 @@ NSString *const kGCMMessageIDKey = @"357011116587";
   tokenString = [tokenString stringByReplacingOccurrencesOfString:@" " withString:@""];
   NSLog(@"Push Notification tokenstring is %@",tokenString);
   [[NSUserDefaults standardUserDefaults]setObject:tokenString forKey:@"DeviceTokenFinal"];
-    [[NSUserDefaults standardUserDefaults]synchronize];
+  [[NSUserDefaults standardUserDefaults]synchronize];
   [FIRMessaging messaging].APNSToken = deviceToken;
 }
+
 - (void)registerForRemoteNotifications {
   if(SYSTEM_VERSION_GRATERTHAN_OR_EQUALTO(@"10.0")){
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     center.delegate = self;
     [center requestAuthorizationWithOptions:(UNAuthorizationOptionSound | UNAuthorizationOptionAlert | UNAuthorizationOptionBadge) completionHandler:^(BOOL granted, NSError * _Nullable error){
       if(!error){
-        [[UIApplication sharedApplication] registerForRemoteNotifications];
+        dispatch_async(dispatch_get_main_queue(), ^{
+          [[UIApplication sharedApplication] registerForRemoteNotifications];
+        });
+      }
+      else
+      {
+        NSLog(@"error message: %@",error.localizedDescription);
       }
     }];
   }
@@ -48,7 +57,7 @@ NSString *const kGCMMessageIDKey = @"357011116587";
     // Code for old versions
     UIUserNotificationType userNotificationTypes = (UIUserNotificationTypeAlert |
                                                     UIUserNotificationTypeBadge |UIUserNotificationTypeSound);
-
+    
     UIUserNotificationSettings *settings = [UIUserNotificationSettings settingsForTypes:userNotificationTypes categories:nil];
     [[UIApplication sharedApplication] registerUserNotificationSettings:settings];
     [[UIApplication sharedApplication] registerForRemoteNotifications];
@@ -58,60 +67,34 @@ NSString *const kGCMMessageIDKey = @"357011116587";
 //Called when a notification is delivered to a foreground app.
 
 -(void)userNotificationCenter:(UNUserNotificationCenter *)center willPresentNotification:(UNNotification *)notification withCompletionHandler:(void (^)(UNNotificationPresentationOptions options))completionHandler{
-  NSLog(@"User Info : %@",notification.request.content.userInfo);
+  NSLog(@"Foreground User Info : %@",notification.request.content.userInfo);
   completionHandler(UNAuthorizationOptionSound | UNAuthorizationOptionAlert | UNAuthorizationOptionBadge);
-  [self registerForRemoteNotifications];
 }
 
-- (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo {
-  // If you are receiving a notification message while your app is in the background,
-  // this callback will not be fired till the user taps on the notification launching the application.
-  // TODO: Handle data of notification
-  
-  // With swizzling disabled you must let Messaging know about the message, for Analytics
-  // [[FIRMessaging messaging] appDidReceiveMessage:userInfo];
-  
-  // Print message ID.
-  if (userInfo[kGCMMessageIDKey]) {
-    NSLog(@"Message ID: %@", userInfo[kGCMMessageIDKey]);
-  }
-  
-  // Print full message.
-  NSLog(@"%@", userInfo);
-}
-
+////Called when a notification is delivered to a background app.
 - (void)application:(UIApplication *)application didReceiveRemoteNotification:(NSDictionary *)userInfo
 fetchCompletionHandler:(void (^)(UIBackgroundFetchResult))completionHandler {
-  // If you are receiving a notification message while your app is in the background,
-  // this callback will not be fired till the user taps on the notification launching the application.
-  // TODO: Handle data of notification
-  
-  // With swizzling disabled you must let Messaging know about the message, for Analytics
-  // [[FIRMessaging messaging] appDidReceiveMessage:userInfo];
-  
-  // Print message ID.
+  [[FIRMessaging messaging] appDidReceiveMessage:userInfo];
   if (userInfo[kGCMMessageIDKey]) {
     NSLog(@"Message ID: %@", userInfo[kGCMMessageIDKey]);
   }
-  
   // Print full message.
-  NSLog(@"%@", userInfo);
-  
+  NSLog(@"background user info is : %@", userInfo);
+  completionHandler(UNAuthorizationOptionSound | UNAuthorizationOptionAlert | UNAuthorizationOptionBadge);
   completionHandler(UIBackgroundFetchResultNewData);
+  [self registerForRemoteNotifications];
 }
-
 // Handle notification messages after display notification is tapped by the user.
 - (void)userNotificationCenter:(UNUserNotificationCenter *)center
 didReceiveNotificationResponse:(UNNotificationResponse *)response
          withCompletionHandler:(void(^)(void))completionHandler {
   NSDictionary *userInfo = response.notification.request.content.userInfo;
+  [[FIRMessaging messaging] appDidReceiveMessage:userInfo];
   if (userInfo[kGCMMessageIDKey]) {
     NSLog(@"Message ID: %@", userInfo[kGCMMessageIDKey]);
   }
-  
   // Print full message.
-  NSLog(@"%@", userInfo);
-  
+  NSLog(@"after display tapped by user  :%@", userInfo);
   completionHandler();
 }
 - (void)messaging:(FIRMessaging *)messaging didReceiveRegistrationToken:(NSString *)fcmToken {
@@ -120,8 +103,12 @@ didReceiveNotificationResponse:(UNNotificationResponse *)response
   NSDictionary *dataDict = [NSDictionary dictionaryWithObject:fcmToken forKey:@"token"];
   [[NSNotificationCenter defaultCenter] postNotificationName:
    @"FCMToken" object:nil userInfo:dataDict];
-  // TODO: If necessary send token to application server.
-  // Note: This callback is fired at each app startup and whenever a new token is generated.
+  //[AppManager sharedManager].appToken = fcmToken;
+}
+- (void)application:(UIApplication *)application
+didFailToRegisterForRemoteNotificationsWithError:(NSError *)error
+{
+  NSLog(@"application error is :%@",error);
 }
 
 
